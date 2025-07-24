@@ -1,0 +1,586 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================================
+// CORE ENTITIES
+// ================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  domain      String?
+  logo        String?
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  users         User[]
+  customers     Customer[]
+  leads         Lead[]
+  deals         Deal[]
+  companies     Company[]
+  activities    Activity[]
+  notes         Note[]
+  tasks         Task[]
+  tags          Tag[]
+  customFields  CustomField[]
+  auditLogs     AuditLog[]
+  securityEvents SecurityEvent[]
+  apiKeys       ApiKey[]
+
+  @@map("organizations")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  firstName     String
+  lastName      String
+  avatar        String?
+  phone         String?
+  role          UserRole  @default(USER)
+  status        UserStatus @default(ACTIVE)
+  lastLoginAt   DateTime?
+  emailVerified Boolean   @default(false)
+  passwordHash  String
+  mfaEnabled    Boolean   @default(false)
+  mfaSecret     String?
+  backupCodes   String[]
+  failedLoginAttempts Int @default(0)
+  lockedUntil   DateTime?
+  passwordResetToken String?
+  passwordResetExpires DateTime?
+  emailVerificationToken String?
+  settings      Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  assignedCustomers Customer[] @relation("AssignedToUser")
+  assignedLeads     Lead[]     @relation("AssignedToUser")
+  assignedDeals     Deal[]     @relation("AssignedToUser")
+  assignedTasks     Task[]     @relation("AssignedToUser")
+  createdActivities Activity[] @relation("CreatedByUser")
+  createdNotes      Note[]     @relation("CreatedByUser")
+  createdTasks      Task[]     @relation("CreatedByUser")
+  sessions          Session[]
+  auditLogs         AuditLog[]
+  securityEvents    SecurityEvent[]
+  apiKeys           ApiKey[]
+  mfaSettings       MfaSettings?
+
+  @@map("users")
+}
+
+model MfaSettings {
+  id          String   @id @default(cuid())
+  enabled     Boolean  @default(false)
+  secret      String
+  backupCodes String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Foreign Keys
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mfa_settings")
+}
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String?
+  industry    String?
+  size        String?
+  description String?
+  website     String?
+  phone       String?
+  address     Json?
+  logo        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  customers Customer[]
+  leads     Lead[]
+
+  @@map("companies")
+}
+
+// ================================
+// CRM ENTITIES
+// ================================
+
+model Customer {
+  id            String         @id @default(cuid())
+  email         String
+  firstName     String
+  lastName      String
+  phone         String?
+  avatar        String?
+  website       String?
+  industry      String?
+  companySize   String?
+  status        CustomerStatus @default(ACTIVE)
+  source        String?
+  lifetimeValue Decimal?       @db.Decimal(12, 2)
+  customFields  Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  companyId      String?
+  company        Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  assignedToId   String?
+  assignedTo     User?        @relation("AssignedToUser", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  // Relationships
+  deals      Deal[]
+  activities Activity[]
+  notes      Note[]
+  tasks      Task[]
+  tags       CustomerTag[]
+
+  @@unique([email, organizationId])
+  @@map("customers")
+}
+
+model Lead {
+  id           String     @id @default(cuid())
+  email        String
+  firstName    String
+  lastName     String
+  phone        String?
+  website      String?
+  industry     String?
+  companySize  String?
+  status       LeadStatus @default(NEW)
+  source       String?
+  score        Int?       @default(0)
+  qualification Json?
+  customFields Json?
+  convertedAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  companyId      String?
+  company        Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  assignedToId   String?
+  assignedTo     User?        @relation("AssignedToUser", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  // Relationships
+  activities Activity[]
+  notes      Note[]
+  tasks      Task[]
+  tags       LeadTag[]
+
+  @@unique([email, organizationId])
+  @@map("leads")
+}
+
+model Deal {
+  id                String     @id @default(cuid())
+  title             String
+  description       String?
+  value             Decimal    @db.Decimal(12, 2)
+  stage             DealStage  @default(PROSPECTING)
+  priority          Priority?  @default(MEDIUM)
+  probability       Int?       @default(50)
+  expectedCloseDate DateTime?
+  actualCloseDate   DateTime?
+  source            String?
+  tags              String[]
+  customFields      Json?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId     String?
+  customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assignedToId   String?
+  assignedTo     User?        @relation("AssignedToUser", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  // Relationships
+  activities Activity[]
+  notes      Note[]
+  tasks      Task[]
+
+  @@map("deals")
+}
+
+// ================================
+// ACTIVITY & COMMUNICATION
+// ================================
+
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  title       String
+  description String?
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId     String?
+  customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId         String?
+  lead           Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId         String?
+  deal           Deal?        @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  createdById    String
+  createdBy      User         @relation("CreatedByUser", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@map("activities")
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  content   String
+  priority  Priority @default(MEDIUM)
+  isPinned  Boolean  @default(false)
+  tags      String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId     String?
+  customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId         String?
+  lead           Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId         String?
+  deal           Deal?        @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  createdById    String
+  createdBy      User         @relation("CreatedByUser", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@map("notes")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus @default(PENDING)
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId     String?
+  customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  leadId         String?
+  lead           Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  dealId         String?
+  deal           Deal?        @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  assignedToId   String?
+  assignedTo     User?        @relation("AssignedToUser", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdById    String
+  createdBy      User         @relation("CreatedByUser", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@map("tasks")
+}
+
+// ================================
+// TAGGING SYSTEM
+// ================================
+
+model Tag {
+  id          String   @id @default(cuid())
+  name        String
+  color       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  customers CustomerTag[]
+  leads     LeadTag[]
+
+  @@unique([name, organizationId])
+  @@map("tags")
+}
+
+model CustomerTag {
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tagId      String
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([customerId, tagId])
+  @@map("customer_tags")
+}
+
+model LeadTag {
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([leadId, tagId])
+  @@map("lead_tags")
+}
+
+// ================================
+// SECURITY & AUDIT
+// ================================
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Foreign Keys
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  action       String
+  entityType   String
+  entityId     String
+  oldValues    Json?
+  newValues    Json?
+  ipAddress    String?
+  userAgent    String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  // Foreign Keys
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}
+
+model SecurityEvent {
+  id          String            @id @default(cuid())
+  type        SecurityEventType
+  severity    SecuritySeverity  @default(MEDIUM)
+  description String
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  resolved    Boolean           @default(false)
+  resolvedAt  DateTime?
+  createdAt   DateTime          @default(now())
+
+  // Foreign Keys
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("security_events")
+}
+
+model ApiKey {
+  id          String       @id @default(cuid())
+  name        String
+  keyHash     String       @unique
+  permissions String[]
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Foreign Keys
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// ================================
+// CUSTOM FIELDS
+// ================================
+
+model CustomField {
+  id          String          @id @default(cuid())
+  name        String
+  label       String
+  type        CustomFieldType
+  options     Json?
+  required    Boolean         @default(false)
+  entityType  EntityType
+  position    Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([name, entityType, organizationId])
+  @@map("custom_fields")
+}
+
+// ================================
+// ENUMS
+// ================================
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  USER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  PROSPECT
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  CONVERTED
+  LOST
+}
+
+enum DealStage {
+  PROSPECTING
+  QUALIFICATION
+  PROPOSAL
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ActivityType {
+  EMAIL
+  CALL
+  MEETING
+  NOTE
+  TASK
+  DEAL_CREATED
+  DEAL_UPDATED
+  DEAL_WON
+  DEAL_LOST
+  CUSTOMER_CREATED
+  CUSTOMER_UPDATED
+  LEAD_CREATED
+  LEAD_CONVERTED
+}
+
+enum CustomFieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+  MULTISELECT
+  EMAIL
+  PHONE
+  URL
+}
+
+enum EntityType {
+  CUSTOMER
+  LEAD
+  DEAL
+  COMPANY
+}
+
+enum SecurityEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  PASSWORD_CHANGED
+  MFA_ENABLED
+  MFA_DISABLED
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+  SUSPICIOUS_ACTIVITY
+  DATA_EXPORT
+  DATA_IMPORT
+  PERMISSION_CHANGED
+  API_KEY_CREATED
+  API_KEY_REVOKED
+  UNAUTHORIZED_ACCESS
+}
+
+enum SecuritySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
